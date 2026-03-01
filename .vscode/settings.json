@@ -1,0 +1,10 @@
+{
+    "flake8.args": [ 
+        "--max-line-length=150",  
+        "--max-complexity=14",
+    ],
+
+    "markdownlint.config": {
+        "MD010": false
+    }
+}
