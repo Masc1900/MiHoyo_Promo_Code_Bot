@@ -22,9 +22,11 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
+scraper/
 .installed.cfg
 *.egg
 MANIFEST
+*.exe
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
