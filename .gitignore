@@ -22,7 +22,7 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
-scraper/
+output/
 .installed.cfg
 *.egg
 MANIFEST
@@ -39,6 +39,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
+logs/
 htmlcov/
 .tox/
 .nox/

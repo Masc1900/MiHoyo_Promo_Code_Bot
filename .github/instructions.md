@@ -13,6 +13,29 @@ Il codice, nomi di variabili e tutto cio che è codice dovrebbe essere in ingles
 
 Creare un bot discord che basandosi sui dati di input dai Json estratti usando [il code scraper](../scraper/Mihoyo_Code_Scraper.exe) che sono nella cartella [output](../scraper/output/"nome gioco".json).
 
+### Esempio di Json:
+
+```bash
+[
+    {
+        "Codice": "ALETTERFORYOU",
+        "Link": "https://hsr.hoyoverse.com/gift?code=ALETTERFORYOU",
+        "Ricompense": [
+            {
+                "Nome": " Adventure Log",
+                "Quantita'": 6,
+                "Immagine": "https://img.game8.co/3656095/54eed904294437c7e5e6d92315ca3e02.png/show"
+            },
+            {
+                "Nome": " Dreamlight - Mixed Sweets",
+                "Quantita'": 2,
+                "Immagine": "https://img.game8.co/3837201/bb231adea728f988f634e82a29586167.png/show"
+            }
+        ]
+    }
+]
+```
+
 ## Comandi
 
 ### /setup
@@ -37,4 +60,5 @@ Un messaggio Discord di un embed con il codice promozionale (insieme al link di 
 ## Logging
 
 Il bot deve loggare tutte le operazioni in un file di log, con data e ora, e il tipo di operazione (info, warning, error).
-Si può usare la libreria logging di python insieme alla funzione logconfig() presente nella cartella `src/functions.py` per questo scopo.
+Si può usare la libreria logging di python per questo scopo con integrazione in discord.py.
+Il file di log deve essere conservato in una cartella /logs.
