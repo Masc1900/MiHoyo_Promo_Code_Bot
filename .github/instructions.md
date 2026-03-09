@@ -13,7 +13,7 @@ Il codice, nomi di variabili e tutto cio che è codice dovrebbe essere in ingles
 
 Creare un bot discord che basandosi sui dati di input dai Json estratti usando [il code scraper](../scraper/Mihoyo_Code_Scraper.exe) che sono nella cartella [output](../scraper/output/"nome gioco".json).
 
-### Esempio di Json:
+### Esempio di Json
 
 ```bash
 [
