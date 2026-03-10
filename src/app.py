@@ -60,14 +60,6 @@ def app():
     print(os.getenv("DISCORD_GUILD_ID"))
     client = MyClient(command_prefix='!', intents=intents)
 
-    @client.tree.command(name="hello", description="Says hello!", guild=GUILD_ID)
-    async def hello(interaction: discord.Interaction):
-        await interaction.response.send_message("Hello!")
-
-    @client.tree.command(name="printer", description="Echo Message", guild=GUILD_ID)
-    async def printer(interaction: discord.Interaction, printer: str):
-        await interaction.response.send_message(printer)
-
     games_choices = [Choice(name=game, value=i+1)
                      for i, game in enumerate(GAMES_MAP.keys())]
 
@@ -76,18 +68,39 @@ def app():
     @app_commands.choices(games=games_choices)
     async def get_codes(interaction: discord.Interaction, games: Choice[int]):
         codes = start_scraping([GAMES_MAP[games.name]])
-        embed = discord.Embed(title=f"Codici per {games.name}", description="Ecco i codici attivi al momento:", color=0x00ff00)
-        embed.set_thumbnail(url=LOGO_MAP[games.name])  # Immagine del gioco scelto
         if not codes:
-            embed.add_field(name="Nessun codice trovato", value="Non sono riuscito a trovare codici attivi per questo gioco.", inline=False)
+            await interaction.response.send_message("Non sono riuscito a trovare codici attivi per questo gioco.", ephemeral=True)
             return
+
+        base_embed = discord.Embed(title=f"Codici per {games.name}", description="Ecco i codici attivi al momento:", color=0x00ff00)
+        base_embed.set_thumbnail(url=LOGO_MAP[games.name])  # Immagine del gioco scelto
+
+        scraper.check_dir_exists("output/")
+        scraper.save_to_json(codes, "output/", f"{games.name}.json")
+
+        embed = base_embed.copy()
+        has_responded = False
+
         for code in codes:
-            embed.add_field(name="", value=f"[{code["Codice"]}]({code["Link"]})", inline=False)
+            embed.add_field(name="", value=f"[{code['Codice']}]({code['Link']})", inline=False)
             rewards = "\n".join([reward["Nome"] for reward in code["Ricompense"]])
             quantity = "\n".join([str(reward["Quantita'"]) for reward in code["Ricompense"]])
             embed.add_field(name="", value=rewards, inline=True)
             embed.add_field(name="", value=quantity, inline=True)
-        await interaction.response.send_message(embed=embed)
+
+            if len(embed.fields) > 20:  # Limite di campi per embed
+                if not has_responded:
+                    await interaction.response.send_message(embed=embed)
+                    has_responded = True
+                else:
+                    await interaction.followup.send(embed=embed)
+                embed = base_embed.copy()
+
+        if embed.fields:
+            if not has_responded:
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed)
 
     client.tree.add_command(get_codes, guild=GUILD_ID)
 
