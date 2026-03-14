@@ -25,7 +25,7 @@ def ensure_config_directory():
 
 def load_channel_config() -> dict:
     """Carica la configurazione dei canali da file JSON.
-    
+
     Returns:
         dict: Dizionario mappando guild_id -> channel_id
     """
@@ -36,14 +36,15 @@ def load_channel_config() -> dict:
             with open(config_file, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            logging.warning(f"Errore nel caricamento della configurazione: {e}")
+            logging.warning(
+                f"Errore nel caricamento della configurazione: {e}")
             return {}
     return {}
 
 
 def save_channel_config(config: dict) -> None:
     """Salva la configurazione dei canali su file JSON.
-    
+
     Args:
         config (dict): Dizionario mappando guild_id -> channel_id
     """
@@ -58,11 +59,11 @@ def save_channel_config(config: dict) -> None:
 
 def get_channel_for_guild(guild_id: int, config: dict) -> int | None:
     """Recupera l'ID canale per una specifica guild.
-    
+
     Args:
         guild_id (int): ID della guild Discord
         config (dict): Configurazione caricata
-        
+
     Returns:
         int | None: ID canale o None se non configurato
     """
@@ -72,7 +73,7 @@ def get_channel_for_guild(guild_id: int, config: dict) -> int | None:
 
 def set_channel_for_guild(guild_id: int, channel_id: int, config: dict) -> None:
     """Salva l'ID canale per una specifica guild.
-    
+
     Args:
         guild_id (int): ID della guild Discord
         channel_id (int): ID del canale Discord
@@ -130,9 +131,9 @@ class MyClient(commands.Bot):
                 f'Riuscito accesso come {self.user} (ID: {self.user.id})')
 
         try:
-            synced = await self.tree.sync(guild=GUILD_ID)
+            synced = await self.tree.sync()
             logging.info(
-                f"Sincronizzati {len(synced)} comandi a {GUILD_ID.id}")
+                f"Sincronizzati {len(synced)} comandi globalmente")
         except Exception:
             logging.exception("Errore durante la sincronizzazione")
 
@@ -238,7 +239,7 @@ def app():
             else:
                 await interaction.followup.send(embed=embed)
 
-    client.tree.add_command(get_codes, guild=GUILD_ID)
+    client.tree.add_command(get_codes)
 
     async def channel_autocomplete(
         interaction: discord.Interaction,
@@ -265,10 +266,10 @@ def app():
         global channel_config
         channel_id = int(channel)
         guild_id = interaction.guild.id if interaction.guild else None  # type: ignore
-        
+
         if guild_id:
             set_channel_for_guild(guild_id, channel_id, channel_config)
-        
+
         chosen_channel = interaction.guild.get_channel(  # type: ignore
             channel_id)  # type: ignore
         if chosen_channel:
@@ -277,7 +278,7 @@ def app():
                 ephemeral=True
             )
 
-    client.tree.add_command(choose_channel_for_new_codes, guild=GUILD_ID)
+    client.tree.add_command(choose_channel_for_new_codes)
 
     # Controlla nuovi codici ogni 30 minuti
     @tasks.loop(minutes=30)  # Per test: 1, altrimenti: 30
@@ -285,10 +286,10 @@ def app():
         """Controlla nuovi codici promo disponibili per ogni gioco."""
         global channel_config
         logging.info("Controllo nuovi codici...")
-        
+
         # Ricarica la configurazione per ottenere i canali attuali
         channel_config = load_channel_config()
-        
+
         for game, url in GAMES_MAP.items():
             try:
                 new_codes = scraper.scrape_page(url)
@@ -324,9 +325,11 @@ def app():
                         if channel_config:
                             for guild_id_str, channel_id_str in channel_config.items():
                                 try:
-                                    channel = client.get_channel(int(channel_id_str))
+                                    channel = client.get_channel(
+                                        int(channel_id_str))
                                     if channel is not None:
                                         for embed in embed_list:
+                                            # type: ignore
                                             await channel.send(embed=embed)  # type: ignore
                                     else:
                                         logging.warning(
