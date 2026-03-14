@@ -101,8 +101,12 @@ logging.basicConfig(
 discord_logger = logging.getLogger('discord')
 discord_logger.setLevel(logging.INFO)
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = discord.Object(
-    id=int(os.getenv("DISCORD_GUILD_ID")))  # type: ignore
+try:
+    GUILD_ID = discord.Object(
+        id=int(os.getenv("DISCORD_GUILD_ID")))  # type: ignore
+    logging.info(f"Guild ID impostato a {GUILD_ID.id}")
+except (ValueError, TypeError):
+    GUILD_ID = None
 
 GAMES_MAP = {  # Espandibile in futuro
     "Honkai Star Rail": "https://game8.co/games/Honkai-Star-Rail/archives/410296",
@@ -217,7 +221,7 @@ def app():
     @app_commands.choices(games=games_choices)
     async def get_codes(interaction: discord.Interaction, games: Choice[int]):
         logging.info(
-            f"{interaction.user} ha richiesto i codici per {games.name}.")
+            f"{interaction.user} nel server {interaction.guild} ha richiesto i codici per {games.name}.")
         codes = start_scraping([GAMES_MAP[games.name]])
         if not codes:
             await interaction.response.send_message("Non sono riuscito a trovare codici attivi per questo gioco.", ephemeral=True)
