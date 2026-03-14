@@ -86,9 +86,9 @@ MiHoyo_Promo_Code_Bot
 ├─ LICENSE
 ├─ README.md
 ├─ .vscode
-|  └─ settings.json
+│  └─ settings.json
 ├─ .github
-|  └─ instructions.md
+│  └─ instructions.md
 ├─ requirements.txt
 ├─ src
 │  ├─ app.py
