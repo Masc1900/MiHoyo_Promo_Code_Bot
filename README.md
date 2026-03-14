@@ -63,7 +63,7 @@ Il MiHoyo Promo Code Bot è uno strumento automatizzato che raccoglie i codici p
 
 2. Configura il bot con le variabili d'ambiente come vedi in .env.example
 
-3. Rinomina .env.example a .env 
+3. Rinomina .env.example a .env
 
 4. Aggiungi il bot ai tuoi server Discord con i permessi necessari
 
@@ -89,6 +89,8 @@ MiHoyo_Promo_Code_Bot
 │  └─ settings.json
 ├─ .github
 │  └─ instructions.md
+├─  config
+│  └─ channels.json
 ├─ requirements.txt
 ├─ src
 │  ├─ app.py
