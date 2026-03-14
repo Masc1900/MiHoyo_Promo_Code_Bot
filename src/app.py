@@ -17,6 +17,72 @@ def ensure_log_directory():
         os.makedirs("logs")
 
 
+def ensure_config_directory():
+    """Crea la cartella config se non esiste."""
+    if not os.path.exists("config"):
+        os.makedirs("config")
+
+
+def load_channel_config() -> dict:
+    """Carica la configurazione dei canali da file JSON.
+
+    Returns:
+        dict: Dizionario mappando guild_id -> channel_id
+    """
+    ensure_config_directory()
+    config_file = "config/channels.json"
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.warning(
+                f"Errore nel caricamento della configurazione: {e}")
+            return {}
+    return {}
+
+
+def save_channel_config(config: dict) -> None:
+    """Salva la configurazione dei canali su file JSON.
+
+    Args:
+        config (dict): Dizionario mappando guild_id -> channel_id
+    """
+    ensure_config_directory()
+    config_file = "config/channels.json"
+    try:
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+    except Exception as e:
+        logging.error(f"Errore nel salvataggio della configurazione: {e}")
+
+
+def get_channel_for_guild(guild_id: int, config: dict) -> int | None:
+    """Recupera l'ID canale per una specifica guild.
+
+    Args:
+        guild_id (int): ID della guild Discord
+        config (dict): Configurazione caricata
+
+    Returns:
+        int | None: ID canale o None se non configurato
+    """
+    channel_id = config.get(str(guild_id))
+    return int(channel_id) if channel_id else None
+
+
+def set_channel_for_guild(guild_id: int, channel_id: int, config: dict) -> None:
+    """Salva l'ID canale per una specifica guild.
+
+    Args:
+        guild_id (int): ID della guild Discord
+        channel_id (int): ID del canale Discord
+        config (dict): Configurazione da aggiornare
+    """
+    config[str(guild_id)] = str(channel_id)
+    save_channel_config(config)
+
+
 # Crea la directory dei log prima di configurare il logging
 ensure_log_directory()
 
@@ -35,8 +101,12 @@ logging.basicConfig(
 discord_logger = logging.getLogger('discord')
 discord_logger.setLevel(logging.INFO)
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = discord.Object(
-    id=int(os.getenv("DISCORD_GUILD_ID")))  # type: ignore
+try:
+    GUILD_ID = discord.Object(
+        id=int(os.getenv("DISCORD_GUILD_ID")))  # type: ignore
+    logging.info(f"Guild ID impostato a {GUILD_ID.id}")
+except (ValueError, TypeError):
+    GUILD_ID = None
 
 GAMES_MAP = {  # Espandibile in futuro
     "Honkai Star Rail": "https://game8.co/games/Honkai-Star-Rail/archives/410296",
@@ -50,8 +120,8 @@ LOGO_MAP = {  # Espandibile in futuro
     "Zenless Zone Zero": "https://cdn2.steamgriddb.com/logo_thumb/6636876050dcade8ec8e3023b1afe9bc.png"
 }
 
-# ID del canale per l'invio dei nuovi codici
-channel_id = None
+# Configurazione dei canali per guild (caricata da file JSON)
+channel_config = load_channel_config()
 
 
 class MyClient(commands.Bot):
@@ -65,9 +135,9 @@ class MyClient(commands.Bot):
                 f'Riuscito accesso come {self.user} (ID: {self.user.id})')
 
         try:
-            synced = await self.tree.sync(guild=GUILD_ID)
+            synced = await self.tree.sync()
             logging.info(
-                f"Sincronizzati {len(synced)} comandi a {GUILD_ID.id}")
+                f"Sincronizzati {len(synced)} comandi globalmente")
         except Exception:
             logging.exception("Errore durante la sincronizzazione")
 
@@ -151,7 +221,7 @@ def app():
     @app_commands.choices(games=games_choices)
     async def get_codes(interaction: discord.Interaction, games: Choice[int]):
         logging.info(
-            f"{interaction.user} ha richiesto i codici per {games.name}.")
+            f"{interaction.user} nel server {interaction.guild} ha richiesto i codici per {games.name}.")
         codes = start_scraping([GAMES_MAP[games.name]])
         if not codes:
             await interaction.response.send_message("Non sono riuscito a trovare codici attivi per questo gioco.", ephemeral=True)
@@ -173,7 +243,7 @@ def app():
             else:
                 await interaction.followup.send(embed=embed)
 
-    client.tree.add_command(get_codes, guild=GUILD_ID)
+    client.tree.add_command(get_codes)
 
     async def channel_autocomplete(
         interaction: discord.Interaction,
@@ -197,23 +267,33 @@ def app():
     @app_commands.command(name="set_channel", description="Setta il canale per i nuovi codici")
     @app_commands.autocomplete(channel=channel_autocomplete)
     async def choose_channel_for_new_codes(interaction: discord.Interaction, channel: str):
-        global channel_id
+        global channel_config
         channel_id = int(channel)
+        guild_id = interaction.guild.id if interaction.guild else None  # type: ignore
+
+        if guild_id:
+            set_channel_for_guild(guild_id, channel_id, channel_config)
+
         chosen_channel = interaction.guild.get_channel(  # type: ignore
-            int(channel))  # type: ignore
+            channel_id)  # type: ignore
         if chosen_channel:
             await interaction.response.send_message(
                 f"Canale impostato a {chosen_channel.mention}!",
                 ephemeral=True
             )
 
-    client.tree.add_command(choose_channel_for_new_codes, guild=GUILD_ID)
+    client.tree.add_command(choose_channel_for_new_codes)
 
     # Controlla nuovi codici ogni 30 minuti
     @tasks.loop(minutes=30)  # Per test: 1, altrimenti: 30
     async def check_new_codes():
         """Controlla nuovi codici promo disponibili per ogni gioco."""
+        global channel_config
         logging.info("Controllo nuovi codici...")
+
+        # Ricarica la configurazione per ottenere i canali attuali
+        channel_config = load_channel_config()
+
         for game, url in GAMES_MAP.items():
             try:
                 new_codes = scraper.scrape_page(url)
@@ -245,17 +325,25 @@ def app():
                         embed_list = create_embeds_for_codes(
                             game, added_codes, base_embed)
 
-                        if channel_id is not None:
-                            channel = client.get_channel(int(channel_id))
+                        # Invia il messaggio a tutti i canali configurati per le diverse guild
+                        if channel_config:
+                            for guild_id_str, channel_id_str in channel_config.items():
+                                try:
+                                    channel = client.get_channel(
+                                        int(channel_id_str))
+                                    if channel is not None:
+                                        for embed in embed_list:
+                                            # type: ignore
+                                            await channel.send(embed=embed)  # type: ignore
+                                    else:
+                                        logging.warning(
+                                            f"Canale non trovato per guild {guild_id_str}")
+                                except Exception as channel_error:
+                                    logging.error(
+                                        f"Errore nell'invio del messaggio a guild {guild_id_str}: {channel_error}")
                         else:
-                            channel = None
-
-                        for embed in embed_list:
-                            if channel is not None:
-                                await channel.send(embed=embed)  # type: ignore
-                            else:
-                                logging.info(
-                                    "Nessun canale impostato per l'invio dei nuovi codici.")
+                            logging.info(
+                                "Nessun canale impostato per l'invio dei nuovi codici.")
 
                         scraper.save_to_json(new_codes, "output/", game)
                 else:
