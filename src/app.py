@@ -17,10 +17,10 @@ def ensure_log_directory():
         os.makedirs("logs")
 
 
-# Create logs directory before setting up logging
+# Crea la directory dei log prima di configurare il logging
 ensure_log_directory()
 
-# Configure logging
+# Configura il logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +31,7 @@ logging.basicConfig(
     ]
 )
 
-# Set discord logger level
+# Imposta il livello di logging di discord
 discord_logger = logging.getLogger('discord')
 discord_logger.setLevel(logging.INFO)
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -50,7 +50,7 @@ LOGO_MAP = {  # Espandibile in futuro
     "Zenless Zone Zero": "https://cdn2.steamgriddb.com/logo_thumb/6636876050dcade8ec8e3023b1afe9bc.png"
 }
 
-# Channel ID for sending new codes
+# ID del canale per l'invio dei nuovi codici
 channel_id = None
 
 
@@ -61,19 +61,21 @@ class MyClient(commands.Bot):
 
     async def on_ready(self):
         if self.user is not None:
-            logging.info(f'Logged in as {self.user} (ID: {self.user.id})')
+            logging.info(
+                f'Riuscito accesso come {self.user} (ID: {self.user.id})')
 
         try:
             synced = await self.tree.sync(guild=GUILD_ID)
-            logging.info(f"Synced {len(synced)} commands to {GUILD_ID.id}")
+            logging.info(
+                f"Sincronizzati {len(synced)} comandi a {GUILD_ID.id}")
         except Exception:
-            logging.exception("Error in sync")
+            logging.exception("Errore durante la sincronizzazione")
 
-        # Start the check_new_codes task if it's assigned and not already running
+        # Avvia il task check_new_codes se assegnato e non sta già girando
         if self.check_new_codes_task and not self.check_new_codes_task.is_running():
-            # Then start the loop for subsequent checks
+            # Poi avvia il loop per i controlli successivi
             self.check_new_codes_task.start()
-            logging.info("check_new_codes task started")
+            logging.info("Iniziato il controllo periodico dei nuovi codici.")
 
     async def on_message(self, message):
         # non rispondere ai propri messaggi
@@ -86,12 +88,20 @@ intents.message_content = True
 
 
 def start_scraping(URLs: list[str]):
+    """Avvia lo scraping delle pagine web.
+
+    Args:
+        URLs (list[str]): Lista di URL da scrapare.
+
+    Returns:
+        list: Lista di codici estratti, o None in caso di errore.
+    """
     try:
         for url in URLs:
             codes = scraper.scrape_page(url)
             return codes
     except Exception:
-        logging.exception("Error while scraping.")
+        logging.exception("Errore durante lo scraping.")
 
 
 def check_file_exists(filepath):
@@ -123,7 +133,7 @@ def create_embeds_for_codes(game_name: str, codes, base_embed: discord.Embed):
         embed.add_field(name="", value=rewards, inline=True)
         embed.add_field(name="", value=quantity, inline=True)
 
-        if len(embed.fields) >= 20:  # Limite di campi per embed
+        if len(embed.fields) >= 20:  # Limite Discord di campi per embed
             embed_list.append(embed)
             embed = base_embed.copy()
     embed_list.append(embed)
@@ -136,11 +146,12 @@ def app():
     games_choices = [Choice(name=game, value=i+1)
                      for i, game in enumerate(GAMES_MAP.keys())]
 
-    @app_commands.command()
-    @app_commands.describe(games='games to choose from')
+    @app_commands.command(name="get_codes", description="Mostra i codici promo attivi per un gioco")
+    @app_commands.describe(games='giochi tra cui scegliere')
     @app_commands.choices(games=games_choices)
     async def get_codes(interaction: discord.Interaction, games: Choice[int]):
-        logging.info(f"{interaction.user} ha richiesto i codici per {games.name}.")
+        logging.info(
+            f"{interaction.user} ha richiesto i codici per {games.name}.")
         codes = start_scraping([GAMES_MAP[games.name]])
         if not codes:
             await interaction.response.send_message("Non sono riuscito a trovare codici attivi per questo gioco.", ephemeral=True)
@@ -172,7 +183,7 @@ def app():
         if not guild:
             return []
 
-        # Get all text channels and filter by current input
+        # Ottiene tutti i canali di testo e filtra in base all'input attuale
         channels = [
             c for c in guild.text_channels
             if current.lower() in c.name.lower()
@@ -180,7 +191,7 @@ def app():
 
         return [
             app_commands.Choice(name=channel.name, value=str(channel.id))
-            for channel in channels[:25]  # Discord limit is 25 choices
+            for channel in channels[:25]  # Il limite di Discord è 25 scelte
         ]
 
     @app_commands.command(name="set_channel", description="Setta il canale per i nuovi codici")
@@ -198,9 +209,10 @@ def app():
 
     client.tree.add_command(choose_channel_for_new_codes, guild=GUILD_ID)
 
-    # Controlla nuovi codici ogni 30 minuti:
-    @tasks.loop(minutes=30)  # Per test 1, altrimenti 30
+    # Controlla nuovi codici ogni 30 minuti
+    @tasks.loop(minutes=30)  # Per test: 1, altrimenti: 30
     async def check_new_codes():
+        """Controlla nuovi codici promo disponibili per ogni gioco."""
         logging.info("Controllo nuovi codici...")
         for game, url in GAMES_MAP.items():
             try:
@@ -253,10 +265,10 @@ def app():
                     f"Errore durante il controllo dei codici per {game}: {e}", exc_info=True)
 
     if TOKEN is None:
-        logging.error("DISCORD_TOKEN environment variable non impostata.")
+        logging.error("Variabile di ambiente DISCORD_TOKEN non impostata.")
         return
 
-    # Store task reference on client so it can be started in on_ready()
+    # Memorizza il riferimento del task nel client in modo da avviarlo in on_ready()
     client.check_new_codes_task = check_new_codes  # type: ignore
     client.run(TOKEN)
 
