@@ -1,9 +1,10 @@
 import discord
 import logging
 import os
+import json
 import scraper_functions as scraper
 from dotenv import load_dotenv
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from discord.app_commands import Choice
 
@@ -24,8 +25,14 @@ LOGO_MAP = {  # Espandibile in futuro
     "Zenless Zone Zero": "https://cdn2.steamgriddb.com/logo_thumb/6636876050dcade8ec8e3023b1afe9bc.png"
 }
 
+# Channel ID for sending new codes
+channel_id = None
+
 
 class MyClient(commands.Bot):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.check_new_codes_task = None
 
     async def on_ready(self):
         if self.user is not None:
@@ -34,8 +41,16 @@ class MyClient(commands.Bot):
         try:
             synced = await self.tree.sync(guild=GUILD_ID)
             logging.info(f"Synced {len(synced)} commands to {GUILD_ID.id}")
+            print(f"Bot is ready and {len(synced)} commands synced.")
         except Exception:
             logging.exception("Error in sync")
+
+        # Start the check_new_codes task if it's assigned and not already running
+        if self.check_new_codes_task and not self.check_new_codes_task.is_running():
+            # Then start the loop for subsequent checks
+            self.check_new_codes_task.start()
+            logging.info("check_new_codes task started")
+            print("Bot is ready and tasks started.")
 
     async def on_message(self, message):
         # non rispondere ai propri messaggi
@@ -56,6 +71,42 @@ def start_scraping(URLs: list[str]):
         print("Error while scraping.")
 
 
+def check_file_exists(filepath):
+    """Controlla se un file esiste.
+
+    Args:
+        filepath (str): Il percorso completo del file (incluso il nome del file).
+
+    Returns:
+        bool: True se il file esiste, False altrimenti.
+    """
+    return os.path.isfile(filepath)
+
+
+def create_embeds_for_codes(game_name: str, codes, base_embed: discord.Embed):
+    embed_list = []
+
+    scraper.check_dir_exists("output/")
+    scraper.save_to_json(codes, "output/", f"{game_name}")
+
+    embed = base_embed.copy()
+
+    for code in codes:
+        embed.add_field(
+            name="", value=f"[{code['Codice']}]({code['Link']})", inline=False)
+        rewards = "\n".join([reward["Nome"] for reward in code["Ricompense"]])
+        quantity = "\n".join([str(reward["Quantita'"])
+                             for reward in code["Ricompense"]])
+        embed.add_field(name="", value=rewards, inline=True)
+        embed.add_field(name="", value=quantity, inline=True)
+
+        if len(embed.fields) >= 20:  # Limite di campi per embed
+            embed_list.append(embed)
+            embed = base_embed.copy()
+    embed_list.append(embed)
+    return embed_list
+
+
 def app():
     print(os.getenv("DISCORD_GUILD_ID"))
     client = MyClient(command_prefix='!', intents=intents)
@@ -72,41 +123,118 @@ def app():
             await interaction.response.send_message("Non sono riuscito a trovare codici attivi per questo gioco.", ephemeral=True)
             return
 
-        base_embed = discord.Embed(title=f"Codici per {games.name}", description="Ecco i codici attivi al momento:", color=0x00ff00)
-        base_embed.set_thumbnail(url=LOGO_MAP[games.name])  # Immagine del gioco scelto
+        base_embed = discord.Embed(
+            title=f"Codici per {games.name}", description="Ecco i codici attivi al momento:", color=0x00ff00)
+        # Immagine del gioco scelto
+        base_embed.set_thumbnail(url=LOGO_MAP[games.name])
 
-        scraper.check_dir_exists("output/")
-        scraper.save_to_json(codes, "output/", f"{games.name}.json")
-
-        embed = base_embed.copy()
+        embed_list = create_embeds_for_codes(games.name, codes, base_embed)
         has_responded = False
 
-        for code in codes:
-            embed.add_field(name="", value=f"[{code['Codice']}]({code['Link']})", inline=False)
-            rewards = "\n".join([reward["Nome"] for reward in code["Ricompense"]])
-            quantity = "\n".join([str(reward["Quantita'"]) for reward in code["Ricompense"]])
-            embed.add_field(name="", value=rewards, inline=True)
-            embed.add_field(name="", value=quantity, inline=True)
-
-            if len(embed.fields) > 20:  # Limite di campi per embed
-                if not has_responded:
-                    await interaction.response.send_message(embed=embed)
-                    has_responded = True
-                else:
-                    await interaction.followup.send(embed=embed)
-                embed = base_embed.copy()
-
-        if embed.fields:
+        for embed in embed_list:
+            logging.debug(embed_list)
             if not has_responded:
                 await interaction.response.send_message(embed=embed)
+                has_responded = True
             else:
                 await interaction.followup.send(embed=embed)
 
     client.tree.add_command(get_codes, guild=GUILD_ID)
 
+    async def channel_autocomplete(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        guild = interaction.guild
+        if not guild:
+            return []
+
+        # Get all text channels and filter by current input
+        channels = [
+            c for c in guild.text_channels
+            if current.lower() in c.name.lower()
+        ]
+
+        return [
+            app_commands.Choice(name=channel.name, value=str(channel.id))
+            for channel in channels[:25]  # Discord limit is 25 choices
+        ]
+
+    @app_commands.command(name="set_channel", description="Setta il canale per i nuovi codici")
+    @app_commands.autocomplete(channel=channel_autocomplete)
+    async def choose_channel_for_new_codes(interaction: discord.Interaction, channel: str):
+        global channel_id
+        channel_id = int(channel)
+        chosen_channel = interaction.guild.get_channel(int(channel))  # type: ignore
+        if chosen_channel:
+            await interaction.response.send_message(
+                f"Canale impostato a {chosen_channel.mention}!",
+                ephemeral=True
+            )
+
+    client.tree.add_command(choose_channel_for_new_codes, guild=GUILD_ID)
+
+    # Controlla nuovi codici ogni 30 minuti:
+    @tasks.loop(minutes=1)  # Per test, altrimenti 30
+    async def check_new_codes():
+        print("Controllo nuovi codici...")
+        for game, url in GAMES_MAP.items():
+            try:
+                new_codes = scraper.scrape_page(url)
+                if not new_codes:
+                    logging.info(f"Nessun codice trovato per {game}.")
+                    print(f"Nessun codice trovato per {game}.")
+                    continue
+
+                filepath = f"output/{game}.json"
+                if check_file_exists(filepath):
+                    with open(filepath, 'r') as f:
+                        old_codes = json.load(f)
+                    old_code_set = set(code['Codice'] for code in old_codes)
+                    new_code_set = set(code['Codice'] for code in new_codes)
+
+                    added_codes = new_code_set - old_code_set
+                    # Per ora non usato, ma potrebbe essere utile in futuro
+                    removed_codes = old_code_set - new_code_set
+
+                    if added_codes or removed_codes:
+                        logging.info(
+                            f"Nuovi codici trovati per {game}: {added_codes}")
+
+                        # Manda un embed al canale Discord se ci sono nuovi codici
+                        base_embed = discord.Embed(
+                            title=f"Nuovi codici per {game}", description="Sono stati trovati nuovi codici attivi:", color=0xff0000)
+                        base_embed.set_thumbnail(url=LOGO_MAP[game])
+                        embed_list = create_embeds_for_codes(
+                            game, new_codes, base_embed)
+
+                        if channel_id is not None:
+                            channel = client.get_channel(int(channel_id))
+                        else:
+                            channel = None
+
+                        for embed in embed_list:
+                            if channel is not None:
+                                await channel.send(embed=embed)
+                            else:
+                                logging.info(
+                                    "Nessun canale impostato per l'invio dei nuovi codici.")
+                                print(
+                                    "Nessun canale impostato per l'invio dei nuovi codici.")
+
+                        scraper.save_to_json(new_codes, "output/", game)
+                else:
+                    scraper.save_to_json(new_codes, "output/", game)
+            except Exception as e:
+                logging.error(
+                    f"Errore durante il controllo dei codici per {game}: {e}", exc_info=True)
+
     if TOKEN is None:
         logging.error("DISCORD_TOKEN environment variable non impostata.")
         return
+
+    # Store task reference on client so it can be started in on_ready()
+    client.check_new_codes_task = check_new_codes
     client.run(TOKEN)
 
 
