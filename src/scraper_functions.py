@@ -6,8 +6,6 @@ from bs4 import BeautifulSoup
 from sys import argv
 from time import strftime
 
-# Copiato da https://github.com/Masc1900/MiHoyo_Codes_Scraper/blob/main/src/functions.py
-
 
 def logconfig():
     """
@@ -68,6 +66,8 @@ def logconfig():
         level=level,
         handlers=handlers,
     )
+    if level == logging.DEBUG:
+        logging.debug("Modalità debug attiva")
 
 
 def format_rewards(names, amounts, imgs):
@@ -252,10 +252,18 @@ def scrape_page(url):
     """
     try:
         logging.info(f"Inizio scraping della pagina: {url}")
-        response = requests.get(url)
-        response.raise_for_status()  # Solleva un'eccezione per status code 4xx/5xx
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        }
+        response = requests.get(url, headers=headers, timeout=15)
         logging.debug(
-            f"Pagina scaricata con successo. Status code: {response.status_code}")
+            f"Risposta ricevuta. Status code: {response.status_code} | lunghezza: {len(response.text)}")
+        if response.status_code != 200 or not response.text:
+            logging.warning(
+                f"Contenuto inatteso da {url}: status {response.status_code}, body len {len(response.text)}")
+            return []
 
         soup = BeautifulSoup(response.text, "html.parser")
         rows = extract_table_rows(soup)
@@ -295,8 +303,7 @@ def save_to_json(data, filepath, filename):
         filename (str): Il nome del file (senza estensione)."""
     try:
         check_dir_exists(filepath)
-        logging.info(
-            f"Inizio salvataggio dati su file: {filepath + filename + '.json'}")
+        logging.info(f"Inizio salvataggio dati su file: {filepath + filename + '.json'}")
         with open(filepath + filename + ".json", "w") as file:
             json.dump(data, fp=file, indent=4)
         logging.info(
